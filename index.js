@@ -115,7 +115,7 @@ client.on("messageCreate", async (message) => {
 
         const response = await result?.response;
 
-        if (message.content) {
+        if (response) {
             await message.reply({
                 content: response?.text(),
             });

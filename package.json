@@ -98,6 +98,9 @@
     "ws": "^8.18.0",
     "yallist": "^3.1.1"
   },
+  "optionalDependencies": {
+    "fsevents": "*"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
