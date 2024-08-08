@@ -1,17 +1,17 @@
 require('dotenv/config');
-const {history, addEntry} = require('./history/chatHistory');
+const {history} = require('./history/chatHistory');
 
 const discord = require("discord.js");
 const {GoogleGenerativeAI} = require("@google/generative-ai");
 const fs = require("fs");
-const {join} = require("node:path");
+const {join, dirname} = require("node:path");
 const axios = require("axios");
 const {d} = require("caniuse-lite/dist/lib/supported");
 
 const MODEL = "gemini-1.5-flash";
 const API_KEY = process.env.API_KEY ?? process.env.API_KEY;
 const BOT_TOKEN = process.env.BOT_TOKEN ?? process.env.BOT_TOKEN;
-const CHANNEL_ID = process.env.CHANNEL_ID ?? process.env.CHANNEL_ID;
+// const CHANNEL_ID = process.env.CHANNEL_ID ?? process.env.CHANNEL_ID;
 
 const ai = new GoogleGenerativeAI(API_KEY);
 const model = ai.getGenerativeModel({model: MODEL});
@@ -19,21 +19,11 @@ const model = ai.getGenerativeModel({model: MODEL});
 const client = new discord.Client({
     intents: Object.keys(discord.GatewayIntentBits),
 });
-const newChatHistoryValues = [
-    {
-        role: "user",
-        parts: [{text: ''}],
-    },
-    {
-        role: "model",
-        parts: [{text: ''}],
-    }
-];
-let imageParts = [];
+
 let result;
 let mimeType;
 const imageTypes = ['jpg', 'png', 'webp', 'heic', 'heif'];
-let botAuthorId = '';
+// let botAuthorId = '';
 let discordAuthorId = '';
 
 
@@ -49,9 +39,13 @@ function getFilenameFromUrl(url) {
 }
 
 async function downloadImage(url, filepath) {
+    const dir = dirname(filepath);
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, {recursive: true});
+    }
+
     const response = await axios({
-        url,
-        responseType: 'stream',
+        url, responseType: 'stream',
     });
     return new Promise((resolve, reject) => {
         response.data.pipe(fs.createWriteStream(filepath))
@@ -63,7 +57,7 @@ async function downloadImage(url, filepath) {
 async function processImage(url) {
     const tempDir = join('temp');
     const filename = getFilenameFromUrl(url);
-    const filepath = join(filename);
+    const filepath = join(tempDir, filename);
 
     if (mimeType) {
         if (!fs.existsSync(tempDir)) {
@@ -97,24 +91,25 @@ client.on('guildMemberAdd', member => {
 });
 
 client.on("messageCreate", async (message) => {
-    discordAuthorId = message.channel.isThread() && !message.author.bot ? message.author.id : 'HMP';
+    discordAuthorId = message.channel.isThread() ? !message.author.bot ? message.author.id : discordAuthorId : 'HMP';
     // botAuthorId = !botAuthorId && message.author.bot?  message.author.id : botAuthorId;
 
     const existingAuthor = history.find(chat => chat.authorId === discordAuthorId);
+    let imageParts = [];
+
 
     if (!existingAuthor) {
         const newAuthorObject = {
-            authorId: discordAuthorId,
-            chatHistory: [...newChatHistoryValues] // Initialize with the provided chatHistory values
+            authorId: discordAuthorId, chatHistory: []
         };
         history.push(newAuthorObject);
     }
 
+    const chatHistory = history.find(chat => chat.authorId === discordAuthorId).chatHistory;
+
     const chat = model.startChat({
-        history: history.find(chat => chat.authorId === discordAuthorId).chatHistory,
-        generationConfig: {
-            maxOutputTokens: 1000,
-            temperature: 2.0,
+        history: chatHistory, generationConfig: {
+            maxOutputTokens: 1000, temperature: 2.0,
         },
     });
 
@@ -129,15 +124,20 @@ client.on("messageCreate", async (message) => {
 
                     const image = {
                         inlineData: {
-                            data: Buffer.from(fs.readFileSync(filepath)).toString("base64"),
-                            mimeType: mimeType,
+                            data: Buffer.from(fs.readFileSync(filepath)).toString("base64"), mimeType: mimeType,
                         },
                     };
 
                     chatHistory.find(chat => chat.role === 'user')?.parts.push(image);
+                    const dbImages = chatHistory.find(chat => chat.role === 'user')?.parts.filter(obj => 'inlineData' in obj);
 
-                    imageParts.push(image)
+                    if (dbImages) {
+                        imageParts.push(...dbImages);
+                    } else {
+                        imageParts.push(image)
+                    }
 
+                    // delete the downloaded image
                     fs.unlinkSync(filepath);
                 } catch (error) {
                     console.error('Error processing image:', error);
@@ -148,7 +148,7 @@ client.on("messageCreate", async (message) => {
     try {
         if (message.author.bot) return;
         if (message.attachments.size > 0) {
-            result = await model.generateContentStream([message.cleanContent, ...imageParts]);
+            result = await chat.sendMessageStream([message.cleanContent, ...imageParts]);
         } else {
             result = await chat.sendMessageStream(message.cleanContent);
         }
@@ -176,11 +176,16 @@ client.on("messageCreate", async (message) => {
             })
         })
 
+        // chatHistory.map(chat => {
+        //     console.log('chat', chat)
+        //     console.log('chat.role:::', chat.role, 'chatHistory::::::', chat.parts)
+        // });
+
+
         // console.log("Final history array:");
         // console.log(JSON.stringify(history, null, 2));
 
-    } catch
-        (e) {
+    } catch (e) {
         console.log('Gemini AI Error: ', e);
         if (e.status === 503) {
             await message.reply({
@@ -194,23 +199,7 @@ client.on("messageCreate", async (message) => {
         }
         if (e.message.includes('RECITATION')) {
             await message.reply({
-                content: "'Your prompt has encountered an error:\\n' +\n" +
-                    "                '\\n' +\n" +
-                    "                'This error originates from Google\\'s AI system, specifically the generative AI model that is being used. It is designed to avoid plagiarism and ensure ethical and responsible AI usage.\\n' +\n" +
-                    "                '\\n' +\n" +
-                    "                'Possible reasons for the error:\\n' +\n" +
-                    "                '\\n' +\n" +
-                    "                'Your request is too specific and asks for a direct copy of existing content: For example, asking for a summary of a specific article or book.\\n' +\n" +
-                    "                'The request is phrased in a way that encourages the model to simply rephrase existing information.\\n' +\n" +
-                    "                'You are trying to generate content that is too close to a copyrighted work.\\n' +\n" +
-                    "                '\\n' +\n" +
-                    "                'How to avoid this error:\\n' +\n" +
-                    "                '\\n' +\n" +
-                    "                'Be more creative with your requests: Ask open-ended questions, encourage the model to provide original insights, and ask for different perspectives.\\n' +\n" +
-                    "                'Provide more context: Explain the purpose of your request and what you want the model to achieve.\\n' +\n" +
-                    "                'Avoid asking for direct summaries or rephrasings of existing content.\\n' +\n" +
-                    "                '\\n' +\n" +
-                    "                'Remember that the Google AI system is constantly evolving, and the specific reasons for this error may vary. If you encounter this error, it\\'s best to review your request and try to rephrase it in a way that encourages original and creative responses.'",
+                content: "'Your prompt has encountered an error:\\n' +\n" + "                '\\n' +\n" + "                'This error originates from Google\\'s AI system, specifically the generative AI model that is being used. It is designed to avoid plagiarism and ensure ethical and responsible AI usage.\\n' +\n" + "                '\\n' +\n" + "                'Possible reasons for the error:\\n' +\n" + "                '\\n' +\n" + "                'Your request is too specific and asks for a direct copy of existing content: For example, asking for a summary of a specific article or book.\\n' +\n" + "                'The request is phrased in a way that encourages the model to simply rephrase existing information.\\n' +\n" + "                'You are trying to generate content that is too close to a copyrighted work.\\n' +\n" + "                '\\n' +\n" + "                'How to avoid this error:\\n' +\n" + "                '\\n' +\n" + "                'Be more creative with your requests: Ask open-ended questions, encourage the model to provide original insights, and ask for different perspectives.\\n' +\n" + "                'Provide more context: Explain the purpose of your request and what you want the model to achieve.\\n' +\n" + "                'Avoid asking for direct summaries or rephrasings of existing content.\\n' +\n" + "                '\\n' +\n" + "                'Remember that the Google AI system is constantly evolving, and the specific reasons for this error may vary. If you encounter this error, it\\'s best to review your request and try to rephrase it in a way that encourages original and creative responses.'",
             });
         }
     }

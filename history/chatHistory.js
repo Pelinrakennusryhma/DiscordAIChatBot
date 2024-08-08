@@ -1,18 +1,4 @@
-const history = [
-    {
-        authorId: 'HMP',
-        chatHistory: [
-            {
-                role: "user",
-                parts: [{ text: '' }],
-            },
-            {
-                role: "model",
-                parts: [{ text: '' }],
-            }
-        ]
-    },
-]
+const history = []
 
 module.exports = {
     history,
