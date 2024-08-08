@@ -1,4 +1,5 @@
 require('dotenv/config');
+const {chatHistory, addEntry} = require('./history/chatHistory');
 
 const discord = require("discord.js");
 const {GoogleGenerativeAI} = require("@google/generative-ai");
@@ -16,6 +17,59 @@ const model = ai.getGenerativeModel({model: MODEL});
 
 const client = new discord.Client({
     intents: Object.keys(discord.GatewayIntentBits),
+});
+
+let imageParts = [];
+let result;
+let mimeType;
+const imageTypes = ['jpg', 'png', 'webp', 'heic', 'heif'];
+
+function getFilenameFromUrl(url) {
+    const fileName = url.split('/').pop().split('?')[0];
+    const fileType = fileName.split('.').pop();
+
+    if (imageTypes.includes(fileType)) {
+        mimeType = "image/" + fileType
+    }
+
+    return fileName;
+}
+
+async function downloadImage(url, filepath) {
+    const response = await axios({
+        url,
+        responseType: 'stream',
+    });
+    return new Promise((resolve, reject) => {
+        response.data.pipe(fs.createWriteStream(filepath))
+            .on('finish', () => resolve())
+            .on('error', (e) => reject(e));
+    });
+}
+
+async function processImage(url) {
+    const tempDir = join('temp');
+    const filename = getFilenameFromUrl(url);
+    const filepath = join(filename);
+
+    if (mimeType) {
+        if (!fs.existsSync(tempDir)) {
+            fs.mkdirSync(tempDir);
+        }
+        await downloadImage(url, filepath);
+
+        return filepath;
+    } else {
+        return false;
+    }
+}
+
+const chat = model.startChat({
+    history: chatHistory,
+    generationConfig: {
+        maxOutputTokens: 1000,
+        temperature: 2.0,
+    },
 });
 
 client.login(BOT_TOKEN).then(() => {
@@ -37,90 +91,82 @@ client.on('guildMemberAdd', member => {
 });
 
 client.on("messageCreate", async (message) => {
-    let discordImage;
-    let image;
-    let result;
-    let mimeType;
-    const imageTypes = ['jpg', 'png', 'webp', 'heic', 'heif'];
 
     for (const attachment of message.attachments.values()) {
-        discordImage = attachment.url;
-    }
+        await processImage(attachment.url).then(filepath => {
+            if (filepath === false) {
+                message.reply({
+                    content: `The image format is invalid. Please provide one of the following image types: ${imageTypes.join(', ')}.`,
+                });
+            } else {
+                try {
 
-    function getFilenameFromUrl(url) {
-        const fileName = url.split('/').pop().split('?')[0];
-        const fileType = fileName.split('.').pop();
+                    const image = {
+                        inlineData: {
+                            data: Buffer.from(fs.readFileSync(filepath)).toString("base64"),
+                            mimeType: mimeType,
+                        },
+                    };
 
-        if (imageTypes.includes(fileType)) {
-            mimeType = "image/" + fileType
-        }
+                    chatHistory.find(chat => chat.role === 'user')?.parts.push(image);
 
-        return fileName;
-    }
+                    imageParts.push(image)
 
-    async function downloadImage(url, filepath) {
-        const response = await axios({
-            url,
-            responseType: 'stream',
-        });
-        return new Promise((resolve, reject) => {
-            response.data.pipe(fs.createWriteStream(filepath))
-                .on('finish', () => resolve())
-                .on('error', (e) => reject(e));
-        });
-    }
-
-    async function processImage(url) {
-        const tempDir = join('temp');
-        const filename = getFilenameFromUrl(url);
-        const filepath = join(filename);
-
-        if (mimeType) {
-            if (!fs.existsSync(tempDir)) {
-                fs.mkdirSync(tempDir);
+                    fs.unlinkSync(filepath);
+                } catch (error) {
+                    console.error('Error processing image:', error);
+                }
             }
-
-            try {
-                await downloadImage(url, filepath);
-
-                image = {
-                    inlineData: {
-                        data: Buffer.from(fs.readFileSync(filepath)).toString("base64"),
-                        mimeType: mimeType,
-                    },
-                };
-
-                fs.unlinkSync(filepath);
-            } catch (error) {
-                console.error('Error processing image:', error);
-            }
-        } else {
-            await message.reply({
-                content: `The image format is invalid. Please provide one of the following image types: ${imageTypes.join(', ')}.`,
-            });
-        }
+        })
     }
-
     try {
         if (message.author.bot) return;
         if (message.channel.id !== CHANNEL_ID) return;
 
-        if (discordImage) {
-            await processImage(discordImage)
-            result = await model.generateContent([message.cleanContent, image]);
-
+        if (message.attachments.size > 0) {
+            result = await model.generateContentStream([message.cleanContent, ...imageParts]);
         } else {
-            result = await model.generateContent(message.cleanContent);
+            result = await chat.sendMessageStream(message.cleanContent);
         }
 
-        const response = await result?.response;
+        let sentMessage = await message.reply({
+            content: '_ _',
+        });
+        let accumulatedText = '';
 
-        if (response) {
+        for await (const chunk of result.stream) {
+            const chunkText = chunk.text();
+            accumulatedText += chunkText;
+
+            if (accumulatedText.trim()) {
+                await sentMessage.edit({content: accumulatedText});
+            } else {
+                console.log('Warning: Attempting to send or edit with empty content.');
+            }
+        }
+
+        // CHAT HISTORY
+        chatHistory.map(item => {
+            console.log(`${item.role}: `, item.parts)
+        })
+
+    } catch
+        (e) {
+        console.log('Gemini AI Error: ', e);
+        if (e.status === 503) {
             await message.reply({
-                content: response?.text(),
+                content: `Whoa there, partner! I’m only equipped to handle 15 requests per minute. Give me a moment to catch my breath, and then feel free to try again. Thanks for your patience!`,
             });
         }
-    } catch (e) {
-        console.log(e);
+        if (e.status === 429) {
+            await message.reply({
+                content: "Whoa there! I’m flattered, but you’ve hit the jackpot with questions—my quota’s been maxed out!",
+            });
+        }
+        if (e.message.includes('RECITATION')) {
+            await message.reply({
+                content: "Please re-phrase your question",
+            });
+        }
     }
 });
