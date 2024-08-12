@@ -2,7 +2,6 @@
 AI Bot to be used in Discord
 
 REST Api calls for user authentication.
-WebSocket for Unity server to connect to.
 
 ## Installing
 Clone repository to your computer.
