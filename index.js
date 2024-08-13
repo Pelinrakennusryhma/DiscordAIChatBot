@@ -24,7 +24,7 @@ let result;
 let mimeType;
 const imageTypes = ['jpg', 'png', 'webp', 'heic', 'heif'];
 // let botAuthorId = '';
-let discordAuthorId = '';
+let discordChannelId = '';
 
 
 function getFilenameFromUrl(url) {
@@ -91,21 +91,21 @@ client.on('guildMemberAdd', member => {
 });
 
 client.on("messageCreate", async (message) => {
-    discordAuthorId = message.channel.isThread() ? !message.author.bot ? message.author.id : discordAuthorId : 'HMP';
+    discordChannelId = message.channel.isThread() ? !message.author.bot ? message.channel.id : discordChannelId : message.channel.id;
     // botAuthorId = !botAuthorId && message.author.bot?  message.author.id : botAuthorId;
 
-    const existingAuthor = history.find(chat => chat.authorId === discordAuthorId);
+    const existingAuthor = history.find(chat => chat.channelId === discordChannelId);
     let imageParts = [];
 
 
     if (!existingAuthor) {
         const newAuthorObject = {
-            authorId: discordAuthorId, chatHistory: []
+            channelId: discordChannelId, chatHistory: []
         };
         history.push(newAuthorObject);
     }
 
-    const chatHistory = history.find(chat => chat.authorId === discordAuthorId).chatHistory;
+    const chatHistory = history.find(chat => chat.channelId === discordChannelId).chatHistory;
 
     const chat = model.startChat({
         history: chatHistory, generationConfig: {
@@ -182,8 +182,8 @@ client.on("messageCreate", async (message) => {
         // });
 
 
-        // console.log("Final history array:");
-        // console.log(JSON.stringify(history, null, 2));
+        console.log("Final history array:");
+        console.log(JSON.stringify(history, null, 2));
 
     } catch (e) {
         console.log('Gemini AI Error: ', e);
