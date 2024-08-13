@@ -1,5 +1,5 @@
 require('dotenv/config');
-const {history} = require('./history/chatHistory');
+let {history} = require('./history/chatHistory');
 
 const discord = require("discord.js");
 const {GoogleGenerativeAI} = require("@google/generative-ai");
@@ -203,4 +203,14 @@ client.on("messageCreate", async (message) => {
             });
         }
     }
+});
+
+// Remove channel history, when channel is deleted
+client.on('channelDelete', channel => {
+    history = history.filter(item => item.channelId !== channel.id);
+});
+
+// Remove thread history, when thread is deleted
+client.on('threadDelete', thread => {
+    history = history.filter(item => item.channelId !== thread.id);
 });
