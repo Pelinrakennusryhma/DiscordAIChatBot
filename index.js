@@ -102,7 +102,7 @@ client.on('guildMemberAdd', member => {
 });
 
 client.on("messageCreate", async (message) => {
-    const categoryAI = isAICategory(message.channel);
+        const categoryAI = isAICategory(message.channel);
         if (categoryAI) {
             discordChannelId = message.channel.isThread() ? !message.author.bot ? message.channel.id : discordChannelId : message.channel.id;
             // botAuthorId = !botAuthorId && message.author.bot?  message.author.id : botAuthorId;
@@ -170,13 +170,21 @@ client.on("messageCreate", async (message) => {
                     content: '_ _',
                 });
                 let accumulatedText = '';
+                let messageCharacterLimit = 2000;
 
                 for await (const chunk of result.stream) {
                     const chunkText = chunk.text();
                     accumulatedText += chunkText;
 
                     if (accumulatedText.trim()) {
-                        await sentMessage.edit({content: accumulatedText});
+                        if (accumulatedText.length < messageCharacterLimit) {
+                            await sentMessage.edit({content: accumulatedText});
+                        } else {
+                            sentMessage = await message.reply({
+                                content: chunkText,
+                            });
+                            accumulatedText = chunkText;
+                        }
                     } else {
                         console.log('Warning: Attempting to send or edit with empty content.');
                     }
@@ -195,6 +203,7 @@ client.on("messageCreate", async (message) => {
                 // });
 
 
+                // Logging chat history to JSON format
                 // console.log("Final history array:");
                 // console.log(JSON.stringify(history, null, 2));
 
@@ -215,6 +224,11 @@ client.on("messageCreate", async (message) => {
                         content: "'Your prompt has encountered an error:\\n' +\n" + "                '\\n' +\n" + "                'This error originates from Google\\'s AI system, specifically the generative AI model that is being used. It is designed to avoid plagiarism and ensure ethical and responsible AI usage.\\n' +\n" + "                '\\n' +\n" + "                'Possible reasons for the error:\\n' +\n" + "                '\\n' +\n" + "                'Your request is too specific and asks for a direct copy of existing content: For example, asking for a summary of a specific article or book.\\n' +\n" + "                'The request is phrased in a way that encourages the model to simply rephrase existing information.\\n' +\n" + "                'You are trying to generate content that is too close to a copyrighted work.\\n' +\n" + "                '\\n' +\n" + "                'How to avoid this error:\\n' +\n" + "                '\\n' +\n" + "                'Be more creative with your requests: Ask open-ended questions, encourage the model to provide original insights, and ask for different perspectives.\\n' +\n" + "                'Provide more context: Explain the purpose of your request and what you want the model to achieve.\\n' +\n" + "                'Avoid asking for direct summaries or rephrasings of existing content.\\n' +\n" + "                '\\n' +\n" + "                'Remember that the Google AI system is constantly evolving, and the specific reasons for this error may vary. If you encounter this error, it\\'s best to review your request and try to rephrase it in a way that encourages original and creative responses.'",
                     });
                 }
+                if (e.message.includes('SAFETY')) {
+                    await message.reply({
+                        content: "Are you just asking the same thing over and over again?",
+                    });
+                }
             }
         }
     }
@@ -229,3 +243,6 @@ client.on('channelDelete', channel => {
 client.on('threadDelete', thread => {
     history = history.filter(item => item.channelId !== thread.id);
 });
+
+
+//TODO: send replies in 2000 character bits (for discord)
