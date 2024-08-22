@@ -97,50 +97,47 @@ client.on("messageCreate", async (message) => {
             },
         });
 
-       /* // This part is for local file save
-        for (const attachment of message.attachments.values()) {
-            fileName = attachment.name;
-            mimeType = attachment.contentType;
-            fileType = attachment.url.split('/').pop().split('?')[0].split('.').pop();
-            const attachmentFolder = imageTypes.includes(fileType) ? "images/" : mimeType === pdfType ? 'pdfs/' : 'attachments/';
-            filePath = join(tempDir, attachmentFolder, fileName);
+        /* // This part is for local file save
+         for (const attachment of message.attachments.values()) {
+             fileName = attachment.name;
+             mimeType = attachment.contentType;
+             fileType = attachment.url.split('/').pop().split('?')[0].split('.').pop();
+             const attachmentFolder = imageTypes.includes(fileType) ? "images/" : mimeType === pdfType ? 'pdfs/' : 'attachments/';
+             filePath = join(tempDir, attachmentFolder, fileName);
 
-            if (mimeType !== pdfType || (mimeType === pdfType && message.channel.isThread())) {
-                await downloadAttachment(attachment.url, filePath)
+             if (mimeType !== pdfType || (mimeType === pdfType && message.channel.isThread())) {
+                 await downloadAttachment(attachment.url, filePath)
 
-                if (mimeType !== pdfType) {
-                    try {
-                        const attachmentFile = {
-                            inlineData: {
-                                data: Buffer.from(fs.readFileSync(filePath)).toString("base64"),
-                                mimeType: mimeType,
-                            },
-                        };
+                 if (mimeType !== pdfType) {
+                     try {
+                         const attachmentFile = {
+                             inlineData: {
+                                 data: Buffer.from(fs.readFileSync(filePath)).toString("base64"),
+                                 mimeType: mimeType,
+                             },
+                         };
 
-                        chatHistory.find(chat => chat.role === 'user')?.parts.push(attachmentFile);
-                        const dbAttachments = chatHistory.find(chat => chat.role === 'user')?.parts.filter(obj => 'inlineData' in obj);
+                         chatHistory.find(chat => chat.role === 'user')?.parts.push(attachmentFile);
+                         const dbAttachments = chatHistory.find(chat => chat.role === 'user')?.parts.filter(obj => 'inlineData' in obj);
 
-                        if (dbAttachments) {
-                            attachmentParts.push(...dbAttachments);
-                        } else {
-                            attachmentParts.push(attachmentFile)
-                        }
+                         if (dbAttachments) {
+                             attachmentParts.push(...dbAttachments);
+                         } else {
+                             attachmentParts.push(attachmentFile)
+                         }
 
 
-                    } catch (error) {
-                        console.error('Error processing attachment:', error);
-                    }
-                }
+                     } catch (error) {
+                         console.error('Error processing attachment:', error);
+                     }
+                 }
 
-            }
-        }*/
+             }
+         }*/
 
         try {
             if (message.author.bot) return;
             if (message.attachments.size > 0) {
-                sentMessage = await message.reply({
-                    content: 'Just a moment, processing your attachments...',
-                });
 
                 for (const attachment of message.attachments.values()) {
                     fileName = attachment.name;
@@ -149,14 +146,14 @@ client.on("messageCreate", async (message) => {
                     const attachmentFolder = imageTypes.includes(fileType) ? "images/" : mimeType === pdfType ? 'pdfs/' : 'attachments/';
                     filePath = join(tempDir, attachmentFolder, fileName);
 
-                    console.log('mimeType', mimeType)
-                    console.log('fileType', fileType)
-
                     if (mimeType === pdfType && !message.channel.isThread()) {
                         await message.reply({
                             content: 'If you want me to tackle a PDF, just start a new thread and toss it in—I\'ll put on my reading glasses and dive right in! 😎📄',
                         });
                     } else {
+                        sentMessage = await message.reply({
+                            content: 'Just a moment, processing your attachments...',
+                        });
                         await downloadAttachment(attachment.url, filePath)
 
                         const uploadResponse = await fileManager.uploadFile(filePath, {
@@ -170,10 +167,10 @@ client.on("messageCreate", async (message) => {
                             }
                         }
                         attachmentParts.push(fetchedFile)
-                    }
 
-                    // delete the downloaded attachment
-                    fs.unlinkSync(filePath);
+                        // delete the downloaded attachment
+                        fs.unlinkSync(filePath);
+                    }
                 }
                 result = await chat.sendMessageStream([message.cleanContent, ...attachmentParts]);
             } else {
@@ -218,7 +215,7 @@ client.on("messageCreate", async (message) => {
             // CHAT HISTORY
             history.map(chat => {
                 chat.chatHistory.map(item => {
-                    console.log('ITEM.role:', item.role, 'ITEM.parts:', item.parts)
+                    // console.log('ITEM.role:', item.role, 'ITEM.parts:', item.parts)
                 })
             })
 
