@@ -17,16 +17,9 @@ const model = ai.getGenerativeModel({model: MODEL});
 const client = new discord.Client({
     intents: Object.keys(discord.GatewayIntentBits),
 });
-
-let mimeType;
-let fileName;
 let discordChannelId = '';
-
-const imageTypes = ['jpg', 'png', 'webp', 'heic', 'heif'];
+const imageTypes = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
 const pdfType = 'application/pdf';
-
-// let botAuthorId = '';
-
 
 async function downloadAttachment(url, filePath) {
     const dir = dirname(filePath);
@@ -77,12 +70,15 @@ client.on('guildMemberAdd', member => {
 client.on("messageCreate", async (message) => {
     let result;
     let filePath = '';
+    let mimeType;
+    let fileName;
+    let fileType;
+    let sentMessage;
+
     const categoryAI = isAICategory(message.channel);
 
     if (categoryAI) {
         discordChannelId = message.channel.isThread() ? !message.author.bot ? message.channel.id : discordChannelId : message.channel.id;
-        // botAuthorId = !botAuthorId && message.author.bot?  message.author.id : botAuthorId;
-
         const existingAuthor = history.find(chat => chat.channelId === discordChannelId);
         let attachmentParts = [];
 
@@ -101,10 +97,11 @@ client.on("messageCreate", async (message) => {
             },
         });
 
+       /* // This part is for local file save
         for (const attachment of message.attachments.values()) {
             fileName = attachment.name;
             mimeType = attachment.contentType;
-            const fileType = attachment.url.split('/').pop().split('?')[0].split('.').pop();
+            fileType = attachment.url.split('/').pop().split('?')[0].split('.').pop();
             const attachmentFolder = imageTypes.includes(fileType) ? "images/" : mimeType === pdfType ? 'pdfs/' : 'attachments/';
             filePath = join(tempDir, attachmentFolder, fileName);
 
@@ -136,65 +133,84 @@ client.on("messageCreate", async (message) => {
                 }
 
             }
-        }
+        }*/
+
         try {
             if (message.author.bot) return;
             if (message.attachments.size > 0) {
-                if (mimeType === pdfType) {
-                    if (message.channel.isThread()) {
+                sentMessage = await message.reply({
+                    content: 'Just a moment, processing your attachments...',
+                });
+
+                for (const attachment of message.attachments.values()) {
+                    fileName = attachment.name;
+                    mimeType = attachment.contentType;
+                    fileType = mimeType.split('/').pop().split('?')[0].split('.').pop();
+                    const attachmentFolder = imageTypes.includes(fileType) ? "images/" : mimeType === pdfType ? 'pdfs/' : 'attachments/';
+                    filePath = join(tempDir, attachmentFolder, fileName);
+
+                    console.log('mimeType', mimeType)
+                    console.log('fileType', fileType)
+
+                    if (mimeType === pdfType && !message.channel.isThread()) {
+                        await message.reply({
+                            content: 'If you want me to tackle a PDF, just start a new thread and toss it in—I\'ll put on my reading glasses and dive right in! 😎📄',
+                        });
+                    } else {
+                        await downloadAttachment(attachment.url, filePath)
+
                         const uploadResponse = await fileManager.uploadFile(filePath, {
                             mimeType: mimeType,
                             displayName: fileName,
                         });
-
-                        // delete the downloaded attachment
-                        fs.unlinkSync(filePath);
-
-                        result = await chat.sendMessageStream([
-                            {
-                                fileData: {
-                                    mimeType: uploadResponse.file.mimeType,
-                                    fileUri: uploadResponse.file.uri
-                                }
-                            },
-                        ]);
-                    } else {
-                        await message.reply({
-                            content: 'If you want me to tackle a PDF, just start a new thread and toss it in—I\'ll put on my reading glasses and dive right in! 😎📄',
-                        });
+                        const fetchedFile = {
+                            fileData: {
+                                mimeType: uploadResponse.file.mimeType,
+                                fileUri: uploadResponse.file.uri
+                            }
+                        }
+                        attachmentParts.push(fetchedFile)
                     }
-                } else {
-                    result = await chat.sendMessageStream([message.cleanContent, ...attachmentParts]);
 
                     // delete the downloaded attachment
                     fs.unlinkSync(filePath);
                 }
+                result = await chat.sendMessageStream([message.cleanContent, ...attachmentParts]);
             } else {
                 result = await chat.sendMessageStream(message.cleanContent);
             }
 
             if (result) {
-                let sentMessage = await message.reply({
-                    content: '_ _',
-                });
                 let accumulatedText = '';
                 let messageCharacterLimit = 2000;
 
-                for await (const chunk of result?.stream) {
-                    const chunkText = chunk.text();
-                    accumulatedText += chunkText;
+                if (mimeType === pdfType) {
+                    await sentMessage.edit({content: 'Feel free to ask me anything about the PDF you provided — I\'m here to help!'});
+                } else {
+                    let i = 0;
+                    for await (const chunk of result?.stream) {
+                        const chunkText = chunk.text();
+                        accumulatedText += chunkText;
 
-                    if (accumulatedText.trim()) {
-                        if (accumulatedText.length < messageCharacterLimit) {
-                            await sentMessage.edit({content: accumulatedText});
-                        } else {
+                        if (i === 0 && message.attachments.size === 0) {
                             sentMessage = await message.reply({
                                 content: chunkText,
                             });
-                            accumulatedText = chunkText;
                         }
-                    } else {
-                        console.log('Warning: Attempting to send or edit with empty content.');
+                        i++;
+
+                        if (accumulatedText.trim()) {
+                            if (accumulatedText.length < messageCharacterLimit) {
+                                await sentMessage.edit({content: accumulatedText});
+                            } else {
+                                sentMessage = await message.reply({
+                                    content: chunkText,
+                                });
+                                accumulatedText = chunkText;
+                            }
+                        } else {
+                            console.log('Warning: Attempting to send or edit with empty content.');
+                        }
                     }
                 }
             }
@@ -202,7 +218,7 @@ client.on("messageCreate", async (message) => {
             // CHAT HISTORY
             history.map(chat => {
                 chat.chatHistory.map(item => {
-                    // console.log('ITEM.role:', item.role, 'ITEM.parts:', item.parts)
+                    console.log('ITEM.role:', item.role, 'ITEM.parts:', item.parts)
                 })
             })
 
