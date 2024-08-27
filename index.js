@@ -81,6 +81,7 @@ client.on("messageCreate", async (message) => {
         discordChannelId = message.channel.isThread() ? !message.author.bot ? message.channel.id : discordChannelId : message.channel.id;
         const existingAuthor = history.find(chat => chat.channelId === discordChannelId);
         let attachmentParts = [];
+        let pdfInChannel = false;
 
         if (!existingAuthor) {
             const newAuthorObject = {
@@ -138,6 +139,9 @@ client.on("messageCreate", async (message) => {
         try {
             if (message.author.bot) return;
             if (message.attachments.size > 0) {
+                sentMessage = await message.reply({
+                    content: 'Just a moment, processing your attachments...',
+                });
 
                 for (const attachment of message.attachments.values()) {
                     fileName = attachment.name;
@@ -146,14 +150,18 @@ client.on("messageCreate", async (message) => {
                     const attachmentFolder = imageTypes.includes(fileType) ? "images/" : mimeType === pdfType ? 'pdfs/' : 'attachments/';
                     filePath = join(tempDir, attachmentFolder, fileName);
 
+                    // TODO: if one of the attachments is PFD, stop the process and show this message from below
                     if (mimeType === pdfType && !message.channel.isThread()) {
-                        await message.reply({
-                            content: 'If you want me to tackle a PDF, just start a new thread and toss it in—I\'ll put on my reading glasses and dive right in! 😎📄',
-                        });
+                        if (sentMessage) {
+                            await sentMessage.edit({content: 'If you want me to tackle a PDF, just start a new thread and toss it in—I\'ll put on my reading glasses and dive right in! 😎📄'});
+                        } else {
+                            await message.reply({
+                                content: 'If you want me to tackle a PDF, just start a new thread and toss it in—I\'ll put on my reading glasses and dive right in! 😎📄',
+                            });
+                        }
+                        pdfInChannel = true;
+                        break;
                     } else {
-                        sentMessage = await message.reply({
-                            content: 'Just a moment, processing your attachments...',
-                        });
                         await downloadAttachment(attachment.url, filePath)
 
                         const uploadResponse = await fileManager.uploadFile(filePath, {
@@ -172,7 +180,10 @@ client.on("messageCreate", async (message) => {
                         fs.unlinkSync(filePath);
                     }
                 }
-                result = await chat.sendMessageStream([message.cleanContent, ...attachmentParts]);
+
+                if (!pdfInChannel) {
+                    result = await chat.sendMessageStream([message.cleanContent, ...attachmentParts]);
+                }
             } else {
                 result = await chat.sendMessageStream(message.cleanContent);
             }
