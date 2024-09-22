@@ -263,14 +263,10 @@ client.on("messageCreate", async (message) => {
 
 // Remove channel history, when channel is deleted
 client.on('channelDelete', channel => {
-    history = history.filter(item => item.channelId !== channel.id);
+    deleteChatHistory(channel.id).then(r =>
+        console.log(`${r} (Channel name: ${channel.name})`)
+    )
 });
-
-// Remove thread history, when thread is deleted
-client.on('threadDelete', thread => {
-    history = history.filter(item => item.channelId !== thread.id);
-});
-
 
 // CLEAN RETRIEVED CHAT HISTORY
 function removeDbGeneratedObjects(doc) {
@@ -321,6 +317,17 @@ async function updateChatHistory(discordChannelId, newHistory) {
         const updatedHistory = chat.chatHistory.concat(newHistory);
 
         await axios.patch(`http://localhost:3002/chats/${discordChannelId}`, {chatHistory: updatedHistory});
+    } catch (error) {
+        console.error('Error updating chat:', error.response ? error.response.data : error.message);
+    }
+}
+
+// DELETE CHAT
+async function deleteChatHistory(discordChannelId) {
+    try {
+        const response = await axios.delete(`http://localhost:3002/chats/${discordChannelId}`);
+        return response.data.message;
+
     } catch (error) {
         console.error('Error updating chat:', error.response ? error.response.data : error.message);
     }
