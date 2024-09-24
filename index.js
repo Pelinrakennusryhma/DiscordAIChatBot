@@ -28,12 +28,13 @@ async function initializeBot() {
         systemInstruction: systemInstructions
     });
 
-    console.log("Bot initialized:::", systemInstructions);
+    console.log("Bot personality description:", systemInstructions);
 }
 
 initializeBot().catch(error => {
     console.error("Error initializing bot:", error);
 });
+
 const client = new discord.Client({
     intents: Object.keys(discord.GatewayIntentBits),
 });
@@ -351,11 +352,11 @@ async function createNewChat(discordChannelId) {
 // Update chat
 async function updateChatHistory(discordChannelId, newHistory) {
     try {
-        const response = await axios.get(`http://localhost:3002/chats/${discordChannelId}`);
+        const response = await axios.get(`http://localhost:${process.env.DATA_PORT}/chats/${discordChannelId}`);
         const chat = response.data;
         const updatedHistory = chat.chatHistory.concat(newHistory);
 
-        await axios.patch(`http://localhost:3002/chats/${discordChannelId}`, {chatHistory: updatedHistory});
+        await axios.patch(`http://localhost:${process.env.DATA_PORT}/chats/${discordChannelId}`, {chatHistory: updatedHistory});
     } catch (error) {
         console.error('Error updating chat:', error.response ? error.response.data : error.message);
     }
@@ -364,7 +365,7 @@ async function updateChatHistory(discordChannelId, newHistory) {
 // Delete chat
 async function deleteChatHistory(discordChannelId) {
     try {
-        const response = await axios.delete(`http://localhost:3002/chats/${discordChannelId}`);
+        const response = await axios.delete(`http://localhost:${process.env.DATA_PORT}/chats/${discordChannelId}`);
         return response.data.message;
 
     } catch (error) {
