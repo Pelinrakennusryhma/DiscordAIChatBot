@@ -6,13 +6,14 @@ const fs = require("fs");
 const {join, dirname} = require("node:path");
 const axios = require("axios");
 const {GoogleAIFileManager} = require("@google/generative-ai/server");
+const {safetySettings} = require("./gemini/safetySettings");
 
 const MODEL = "gemini-1.5-flash";
 const API_KEY = process.env.API_KEY ?? process.env.API_KEY;
 const BOT_TOKEN = process.env.BOT_TOKEN ?? process.env.BOT_TOKEN;
 const fileManager = new GoogleAIFileManager(API_KEY);
 const ai = new GoogleGenerativeAI(API_KEY);
-const model = ai.getGenerativeModel({model: MODEL});
+const model = ai.getGenerativeModel({model: MODEL, safetySettings});
 const client = new discord.Client({
     intents: Object.keys(discord.GatewayIntentBits),
 });
@@ -77,7 +78,7 @@ client.on("messageCreate", async (message) => {
     const categoryAI = isAICategory(message.channel);
 
     if (categoryAI) {
-        if (message.author.bot) return;
+        if (message.author.bot || message.system) return;
 
         let attachmentParts = [];
         let pdfInChannel = false;
@@ -254,7 +255,7 @@ client.on("messageCreate", async (message) => {
             // If same prompt is sent too frequently
             if (e.message.includes('SAFETY')) {
                 await message.reply({
-                    content: "Whoa there, déjà vu! You've asked that question so many times, even my circuits are getting dizzy. I need a breather—how about you wait a moment and try again, or hit me with a new question before I start having a meltdown! 😅",
+                    content: "Whoa there! You've might've asked that question so many times that my circuits are getting dizzy.\n" + "I need a breather — either you're asking too frequently or it might be against my safety policy. How about giving me a moment and trying again, or hit me with a new question before I start glitching out😅!",
                 });
             }
         }
@@ -267,6 +268,12 @@ client.on('channelDelete', channel => {
         console.log(`${r} (Channel name: ${channel.name})`)
     )
 });
+
+// Remove thread history, when thread is deleted
+client.on('threadDelete', thread => {
+    history = history.filter(item => item.channelId !== thread.id);
+});
+
 
 // CLEAN RETRIEVED CHAT HISTORY
 function removeDbGeneratedObjects(doc) {
@@ -313,7 +320,6 @@ async function updateChatHistory(discordChannelId, newHistory) {
     try {
         const response = await axios.get(`http://localhost:3002/chats/${discordChannelId}`);
         const chat = response.data;
-
         const updatedHistory = chat.chatHistory.concat(newHistory);
 
         await axios.patch(`http://localhost:3002/chats/${discordChannelId}`, {chatHistory: updatedHistory});
