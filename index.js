@@ -13,13 +13,30 @@ const API_KEY = process.env.API_KEY ?? process.env.API_KEY;
 const BOT_TOKEN = process.env.BOT_TOKEN ?? process.env.BOT_TOKEN;
 const fileManager = new GoogleAIFileManager(API_KEY);
 const ai = new GoogleGenerativeAI(API_KEY);
-const model = ai.getGenerativeModel({model: MODEL, safetySettings});
+
+const imageTypes = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
+const pdfType = 'application/pdf';
+let discordChannelId = '';
+let model;
+
+async function initializeBot() {
+    const systemInstructions = await checkPersonality();
+
+    model = await ai.getGenerativeModel({
+        model: MODEL,
+        safetySettings,
+        systemInstruction: systemInstructions
+    });
+
+    console.log("Bot initialized:::", systemInstructions);
+}
+
+initializeBot().catch(error => {
+    console.error("Error initializing bot:", error);
+});
 const client = new discord.Client({
     intents: Object.keys(discord.GatewayIntentBits),
 });
-let discordChannelId = '';
-const imageTypes = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
-const pdfType = 'application/pdf';
 
 async function downloadAttachment(url, filePath) {
     const dir = dirname(filePath);
@@ -274,8 +291,22 @@ client.on('threadDelete', thread => {
     history = history.filter(item => item.channelId !== thread.id);
 });
 
+// Fetch Bot personality from database
+async function checkPersonality() {
+    let botResponseNature = [{
+        botPersonality: ""
+    }];
+    const currentPersonality = await getBotPersonality();
 
-// CLEAN RETRIEVED CHAT HISTORY
+    if (!currentPersonality.length > 0) {
+        await createNewPersonality();
+    } else {
+        botResponseNature = currentPersonality;
+    }
+    return botResponseNature[0].botPersonality;
+}
+
+// Clean retrieved chat history to proper format
 function removeDbGeneratedObjects(doc) {
     if (Array.isArray(doc)) {
         return doc.map(removeDbGeneratedObjects);
@@ -290,7 +321,9 @@ function removeDbGeneratedObjects(doc) {
     }
 }
 
-// GET CHAT HISTORY FROM DB
+// DATABASE CALLS FOR CHATS
+
+// Get chat from DB
 async function getChatHistory(discordChannelId) {
     try {
         const response = await axios.get(`http://localhost:${process.env.DATA_PORT}/chats/${discordChannelId}`);
@@ -302,7 +335,7 @@ async function getChatHistory(discordChannelId) {
     }
 }
 
-// CREATE A NEW CHAT IN DB
+// Create a new chat in DB
 async function createNewChat(discordChannelId) {
     const newAuthorObject = {
         channelId: discordChannelId, chatHistory: []
@@ -315,7 +348,7 @@ async function createNewChat(discordChannelId) {
 }
 
 
-// UPDATE CHAT HISTORY
+// Update chat
 async function updateChatHistory(discordChannelId, newHistory) {
     try {
         const response = await axios.get(`http://localhost:3002/chats/${discordChannelId}`);
@@ -328,7 +361,7 @@ async function updateChatHistory(discordChannelId, newHistory) {
     }
 }
 
-// DELETE CHAT
+// Delete chat
 async function deleteChatHistory(discordChannelId) {
     try {
         const response = await axios.delete(`http://localhost:3002/chats/${discordChannelId}`);
@@ -336,5 +369,29 @@ async function deleteChatHistory(discordChannelId) {
 
     } catch (error) {
         console.error('Error updating chat:', error.response ? error.response.data : error.message);
+    }
+}
+
+// DATABASE CALLS FOR BOT SETTINGS
+
+// Get chat history from DB
+async function getBotPersonality() {
+    try {
+        const response = await axios.get(`http://localhost:${process.env.DATA_PORT}/bots`);
+        const personality = response.data;
+
+        return personality;
+    } catch (error) {
+        console.error('Error fetching chat history:', error.message);
+    }
+}
+
+// Create a new empty bot personality
+async function createNewPersonality() {
+    const createPersonality = {botPersonality: ""};
+    try {
+        await axios.post(`http://localhost:${process.env.DATA_PORT}/bots/`, createPersonality);
+    } catch (error) {
+        console.error('Error setting a new chat:', error.message);
     }
 }
